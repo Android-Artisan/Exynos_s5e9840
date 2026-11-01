@@ -2,6 +2,8 @@
 
 import struct
 import sys
+import keystorage
+import os
 
 RETURN_ZERO = bytes.fromhex("00 00 80 D2 C0 03 5F D6")
 RETURN_ONE = bytes.fromhex("20 00 80 D2 C0 03 5F D6")
@@ -116,8 +118,20 @@ def patch_fuse_boot_key(data):
 
 should_fuse_key = False # Burns BOOT_KEY once after UFS boot into ODIN MODE.
 
+def patch_keystorage_avb_keys(data, key):
+    for slot, meta in enumerate(data.header.key_meta[:data.header.key_count]):
+        if meta.sign_type == 0xff:
+            data.set_pubkey(slot, key)
+
 if __name__ == "__main__":
-    with open(sys.argv[1], "rb") as f:
+    keys_dir = sys.argv[1]
+    output_dir = sys.argv[2]
+
+    sboot_dir = os.path.join(output_dir, "sboot")
+    bootloader_dir = os.path.join(sboot_dir, "bootload")
+    output_bootload = os.path.join(sboot_dir, "bootload.bin")
+    output_keystorage = os.path.join(os.path.join(output_dir, "keystorage"), "keystorage.bin")
+    with open(output_bootload, "rb") as f:
         data = bytearray(f.read())
 
     patch_check_signature(data)
@@ -126,5 +140,11 @@ if __name__ == "__main__":
         patch_fuse_boot_key(data)
     #patch_sbl_check_upload(data)
 
-    with open(sys.argv[1], "wb") as f:
+    with open(output_bootload, "wb") as f:
         f.write(data)
+
+    with open(os.path.join(keys_dir, "avb.pubkey"), "rb") as f:
+        avb_pubkey = f.read()
+    image = keystorage.load(output_keystorage)
+    patch_keystorage_avb_keys(image, avb_pubkey)
+    image.save(output_keystorage)
